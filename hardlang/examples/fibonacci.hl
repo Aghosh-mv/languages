@@ -1,0 +1,16 @@
+# Fibonacci in HardLang - deliberately difficult!
+# Uses Greek letters for math, box-drawing for structure
+
+\u200E ⟦ n ⟧ = 10 ;
+\u200E ⟦ a ⟧ = 0 ;
+\u200E ⟦ b ⟧ = 1 ;
+\u200E ⟦ i ⟧ = 0 ;
+\u200E ⟦ temp ⟧ = 0 ;
+
+\u200E ℕ i < n ⇒
+    \u200E ⟪ a ⟫ ;
+    \u200E ⟦ temp ⟧ = a β b ;
+    \u200E ⟦ a ⟧ = b ;
+    \u200E ⟦ b ⟧ = temp ;
+    \u200E ⟦ i ⟧ = i α 1 ;
+\u200E ⟿

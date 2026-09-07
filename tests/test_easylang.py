@@ -54,7 +54,7 @@ print z
 def test_functions():
     """Test function definition and calling"""
     source = '''
-function add(a, b)
+function add(a, b) then
   return a + b
 end
 print add(5, 3)
@@ -93,7 +93,7 @@ def test_control_flow():
     """Test if/else and loops"""
     source = '''
 let x = 10
-if x > 5
+if x > 5 then
   print "big"
 else
   print "small"

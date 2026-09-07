@@ -1,0 +1,11 @@
+# Factorial in HardLang - shows the pain!
+# Greek letters required, box-drawing mandatory
+
+‎ 𝔽 factorial( n ) ⇒
+    ‏ ℕ n η 0 ⇒
+        ‎ ℚ 1 ;
+    ‏ ⟿
+    ‎ ℚ n γ factorial( n β 1 ) ;
+‏ ⟿
+
+‎ ⟪ factorial( 5 ) ⟫ ;

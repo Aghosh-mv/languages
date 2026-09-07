@@ -619,6 +619,10 @@ class Parser:
     def parse_statement(self) -> Optional[ASTNode]:
         self.skip_newlines()
         
+        # Handle 'print' as a special statement (can be called without parentheses)
+        if self.peek().type == TokenType.IDENTIFIER and self.peek().value == 'print':
+            return self.parse_print_statement()
+        
         if self.peek().type == TokenType.LET:
             return self.parse_let()
         if self.peek().type == TokenType.CONST:
@@ -654,6 +658,21 @@ class Parser:
         
         # Expression statement or assignment
         return self.parse_expression_statement()
+    
+    def parse_print_statement(self) -> FunctionCall:
+        """Parse 'print' as a special statement that can be called without parentheses"""
+        token = self.expect(TokenType.IDENTIFIER)
+        args = []
+        # Parse arguments until end of line or block
+        while self.peek().type not in (TokenType.NEWLINE, TokenType.EOF, TokenType.END):
+            args.append(self.parse_expression())
+            if self.peek().type == TokenType.COMMA:
+                self.advance()
+        return FunctionCall(
+            func=Identifier(name='print', line=token.line, col=token.col),
+            args=args,
+            line=token.line, col=token.col
+        )
     
     def parse_let(self) -> Assignment:
         token = self.expect(TokenType.LET)
@@ -724,7 +743,7 @@ class Parser:
         statements = []
         self.skip_newlines()
         
-        while self.peek().type not in (TokenType.END, TokenType.EOF):
+        while self.peek().type not in (TokenType.END, TokenType.ELSE, TokenType.ELSEIF, TokenType.EOF):
             stmt = self.parse_statement()
             if stmt:
                 statements.append(stmt)
