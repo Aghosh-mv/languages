@@ -1,0 +1,7 @@
+// Hello World in HardLang v2 (Malbolge-inspired)
+// Difficulty: ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ (10/10)
+// 
+// This program outputs "Hello World" but is intentionally
+// difficult to write and understand.
+
+9*8*7*6*5*4*3*2*1*0
