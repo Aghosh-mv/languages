@@ -1,90 +1,128 @@
 # EasyLang - The Vibe Coding Language
 
-## Philosophy
-EasyLang is designed to feel like vibe coding - writing code that feels natural and intuitive. It's still a real programming language, but with these features:
+EasyLang is designed to feel like vibe coding - writing code that feels natural and intuitive.
 
-1. **Natural Language Syntax**: Write code like you're talking to a friend
-2. **Forgiving Parser**: Multiple ways to write the same thing
-3. **Type Inference**: No need to declare types
-4. **Minimal Boilerplate**: Get straight to the logic
-5. **Smart Defaults**: Everything just works out of the box
-6. **Friendly Errors**: Messages that help you fix problems
-7. **Multiple Styles**: Choose what feels right for you
-8. **Auto-Complete Hints**: Suggestions as you type
+## Key Features
 
-## Quick Reference
-
-### Variables (any of these work!)
+### 1. Natural Language Syntax
+Multiple synonyms for everything:
 ```
-let x = 5
-x = 10
-x is now 10
-set x to 10
-make x equal 10
+print "Hello World!"
+say "Hello World!"
+output "Hello World!"
+show "Hello World!"
+tell "Hello World!"
 ```
 
-### Output
+### 2. Forgiving Parser
+Common typos are caught with suggestions:
 ```
-print "Hello World"
-say "Hello World"
-output "Hello World"
-console.log "Hello World"
-show x
-tell me x
+# If you type "fucntion" instead of "function"
+# EasyLang will suggest: "Did you mean 'function'?"
 ```
 
-### Control Flow (all equivalent)
+### 3. Type Inference
+No type declarations needed:
 ```
-if x > 5 then do
-  print "big"
-end
-
-when x > 5
-  print "big"
-done
-
-whenever x is greater than 5
-  print "big"
-close
-
-if x > 5: print "big"
+let x = 10          # Automatically inferred as integer
+let name = "Alice"  # Automatically inferred as string
+let arr = [1, 2, 3] # Automatically inferred as array
 ```
 
-### Loops
+### 4. Minimal Boilerplate
+Get straight to the logic:
 ```
-repeat 10 times
-  print "hello"
-end
+# No imports needed
+# No class definitions needed
+# Just write your code
+```
 
-do this 10 times
-  print "hello"
-done
+### 5. Flexible Whitespace
+Newlines are optional:
+```
+let x = 10; let y = 20; print x + y
+```
 
-for 10 iterations
-  print "hello"
-end
+### 6. Smart Defaults
+Everything just works:
+```
+# Arrays auto-resize
+let arr = []
+arr.push(1)
+arr.push(2)
 
-loop 10x
-  print "hello"
-end
+# Strings are mutable
+let name = "Alice"
+name.upper()  # Returns "ALICE"
+```
+
+## Syntax
+
+### Variables
+```
+let x = 10
+const PI = 3.14159
 ```
 
 ### Functions
 ```
-to greet name do
-  print "Hello " + name
+function add(a, b) then
+  return a + b
 end
 
-function greet(name) {
-  print "Hello " + name
-}
+# Lambda
+let square = (x) -> x * x
+```
 
-define greet taking name {
-  print "Hello " + name
-}
+### Control Flow
+```
+if condition then
+  # do something
+else
+  # do something else
+end
+
+for i in range(10)
+  print i
+end
+
+while true
+  print "infinite loop"
+end
+```
+
+### Arrays
+```
+let arr = [1, 2, 3, 4, 5]
+print len(arr)  # 5
+print sum(arr)  # 15
+print max(arr)  # 5
+print min(arr)  # 1
+```
+
+### Maps
+```
+let person = {name: "Alice", age: 30}
+print person.name  # Alice
+```
+
+### Error Handling
+```
+try
+  let result = 10 / 0
+catch error
+  print "Error:", error
+finally
+  print "Cleanup"
+end
 ```
 
 ## Running
+
 ```bash
-python3 easylang.py program.el
+python easylang/easylang.py easylang/examples/hello.el
 ```
+
+## Examples
+
+See the `examples/` directory for more examples.
