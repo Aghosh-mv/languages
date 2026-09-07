@@ -1,0 +1,111 @@
+// HardwareLang - Robot Control Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program controls a simple robot with two motors
+
+// Initialize the board
+board arduino = Arduino
+
+// Define motors
+motor left = Motor(pin_fwd: GPIO5, pin_bwd: GPIO6)
+motor right = Motor(pin_fwd: GPIO9, pin_bwd: GPIO10)
+
+// Define sensors
+sensor ultrasonic = Sensor(pin_trig: GPIO11, pin_echo: GPIO12, type: ULTRASONIC)
+sensor ir_left = Sensor(pin: GPIO13, type: IR)
+sensor ir_right = Sensor(pin: GPIO14, type: IR)
+
+// Define LED for status
+led status = LED(pin: GPIO2)
+
+// Initialize serial communication
+uart.begin(9600)
+
+// Function to move forward
+function moveForward(speed):
+  motorControl(left, FWD, speed)
+  motorControl(right, FWD, speed)
+end
+
+// Function to move backward
+function moveBackward(speed):
+  motorControl(left, BWD, speed)
+  motorControl(right, BWD, speed)
+end
+
+// Function to turn left
+function turnLeft(speed):
+  motorControl(left, BWD, speed)
+  motorControl(right, FWD, speed)
+end
+
+// Function to turn right
+function turnRight(speed):
+  motorControl(left, FWD, speed)
+  motorControl(right, BWD, speed)
+end
+
+// Function to stop
+function stop():
+  motorControl(left, STOP, 0)
+  motorControl(right, STOP, 0)
+end
+
+// Function to read distance
+function readDistance():
+  digitalWrite(GPIO11, HIGH)
+  delay(10)
+  digitalWrite(GPIO11, LOW)
+  let duration = pulseIn(GPIO12, HIGH)
+  let distance = (duration * 0.034) / 2
+  return distance
+end
+
+// Function to check obstacle
+function checkObstacle():
+  let distance = readDistance()
+  if distance < 20
+    return true
+  else
+    return false
+  end
+end
+
+// Function to line follow
+function followLine():
+  let leftSensor = digitalRead(GPIO13)
+  let rightSensor = digitalRead(GPIO14)
+  
+  if leftSensor == LOW and rightSensor == LOW
+    moveForward(100)
+  else if leftSensor == HIGH and rightSensor == LOW
+    turnLeft(80)
+  else if leftSensor == LOW and rightSensor == HIGH
+    turnRight(80)
+  else
+    stop()
+  end
+end
+
+// Main program
+print "Robot Control System Initialized"
+print "Waiting for commands..."
+
+// Turn on status LED
+digitalWrite(GPIO2, HIGH)
+
+// Main loop
+while true
+  // Check for obstacles
+  if checkObstacle()
+    print "Obstacle detected! Stopping..."
+    stop()
+    digitalWrite(GPIO2, LOW)
+    delay(500)
+    digitalWrite(GPIO2, HIGH)
+  else
+    // Follow line
+    followLine()
+  end
+  
+  delay(100)
+end

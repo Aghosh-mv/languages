@@ -1,0 +1,20 @@
+// HardwareLang - LED Blink Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program blinks an LED on GPIO2
+
+// Initialize the board
+board esp32 = ESP32
+
+// Define the LED
+led onboard = LED(pin: GPIO2)
+
+// Main loop
+function loop():
+  // Turn LED on
+  digitalWrite(GPIO2, HIGH)
+  delay(500)
+  
+  // Turn LED off
+  digitalWrite(GPIO2, LOW)
+  delay(500)
+end
