@@ -1,0 +1,317 @@
+// HardwareLang - Security System Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program controls a home security system
+
+// Initialize the board
+board arduino = Arduino
+
+// Define sensors
+sensor door_front = Sensor(pin: GPIO2, type: DOOR)
+sensor door_back = Sensor(pin: GPIO3, type: DOOR)
+sensor window_1 = Sensor(pin: GPIO4, type: WINDOW)
+sensor window_2 = Sensor(pin: GPIO5, type: WINDOW)
+sensor motion_living = Sensor(pin: GPIO6, type: PIR)
+sensor motion_bedroom = Sensor(pin: GPIO7, type: PIR)
+sensor glass_break = Sensor(pin: GPIO8, type: GLASS)
+
+// Define actuators
+buzzer alarm = Buzzer(pin: GPIO9)
+led status = LED(pin: GPIO10)
+relay siren = Relay(pin: GPIO11)
+relay strobe = Relay(pin: GPIO12)
+
+// Define keypad
+button btn_1 = Button(pin: GPIO13)
+button btn_2 = Button(pin: GPIO14)
+button btn_3 = Button(pin: GPIO15)
+button btn_4 = Button(pin: GPIO16)
+button btn_arm = Button(pin: GPIO17)
+button btn_disarm = Button(pin: GPIO18)
+
+// Define display
+display lcd = Display(type: LCD16X2)
+
+// System state
+let armed = false
+let alarm_active = false
+let entry_delay = 30  // seconds
+let exit_delay = 30   // seconds
+let alarm_duration = 60  // seconds
+
+// Code
+let code = "1234"
+let entered_code = ""
+
+// Sensor states
+let sensor_states = {
+  door_front: false,
+  door_back: false,
+  window_1: false,
+  window_2: false,
+  motion_living: false,
+  motion_bedroom: false,
+  glass_break: false
+}
+
+// Function to arm system
+function armSystem():
+  print "Arming system..."
+  print "Exit delay:", exit_delay, "seconds"
+  
+  // Countdown
+  for i in range(exit_delay)
+    lcd.clear()
+    lcd.setCursor(0, 0)
+    lcd.print("Arming in")
+    lcd.setCursor(0, 1)
+    lcd.print(str(exit_delay - i) + " seconds")
+    
+    // Blink LED
+    digitalWrite(GPIO10, HIGH)
+    delay(500)
+    digitalWrite(GPIO10, LOW)
+    delay(500)
+  end
+  
+  // Arm system
+  armed = true
+  alarm_active = false
+  digitalWrite(GPIO10, HIGH)
+  
+  // Publish status
+  uart.println("System ARMED")
+  
+  lcd.clear()
+  lcd.setCursor(0, 0)
+  lcd.print("System ARMED")
+end
+
+// Function to disarm system
+function disarmSystem():
+  print "Disarming system..."
+  
+  // Stop alarm if active
+  if alarm_active then
+    digitalWrite(GPIO9, LOW)
+    digitalWrite(GPIO11, LOW)
+    digitalWrite(GPIO12, LOW)
+    alarm_active = false
+  end
+  
+  // Disarm system
+  armed = false
+  digitalWrite(GPIO10, LOW)
+  
+  // Publish status
+  uart.println("System DISARMED")
+  
+  lcd.clear()
+  lcd.setCursor(0, 0)
+  lcd.print("System DISARMED")
+end
+
+// Function to trigger alarm
+function triggerAlarm(sensor):
+  if armed and not alarm_active then
+    print "ALARM TRIGGERED by:", sensor
+    alarm_active = true
+    
+    // Activate alarm devices
+    digitalWrite(GPIO9, HIGH)
+    digitalWrite(GPIO11, HIGH)
+    digitalWrite(GPIO12, HIGH)
+    
+    // Publish alarm
+    uart.println("ALARM: " + sensor)
+    
+    // Display alarm
+    lcd.clear()
+    lcd.setCursor(0, 0)
+    lcd.print("ALARM!")
+    lcd.setCursor(0, 1)
+    lcd.print(sensor)
+    
+    // Sound alarm for duration
+    let start_time = millis()
+    while millis() - start_time < alarm_duration * 1000
+      // Check for disarm button
+      if digitalRead(GPIO18) == LOW then
+        let entered = readCode()
+        if entered == code then
+          disarmSystem()
+          return
+        end
+      end
+      delay(100)
+    end
+    
+    // Auto-stop after duration
+    digitalWrite(GPIO9, LOW)
+    digitalWrite(GPIO11, LOW)
+    digitalWrite(GPIO12, LOW)
+    alarm_active = false
+  end
+end
+
+// Function to read code from buttons
+function readCode():
+  let code = ""
+  let start_time = millis()
+  
+  // Read 4 digits
+  for i in range(4)
+    while true
+      // Check timeout
+      if millis() - start_time > 10000 then
+        return ""
+      end
+      
+      // Check buttons
+      if digitalRead(GPIO13) == LOW then
+        code = code + "1"
+        while digitalRead(GPIO13) == LOW
+          delay(50)
+        end
+        break
+      else if digitalRead(GPIO14) == LOW then
+        code = code + "2"
+        while digitalRead(GPIO14) == LOW
+          delay(50)
+        end
+        break
+      else if digitalRead(GPIO15) == LOW then
+        code = code + "3"
+        while digitalRead(GPIO15) == LOW
+          delay(50)
+        end
+        break
+      else if digitalRead(GPIO16) == LOW then
+        code = code + "4"
+        while digitalRead(GPIO16) == LOW
+          delay(50)
+        end
+        break
+      end
+      delay(50)
+    end
+  end
+  
+  return code
+end
+
+// Function to check sensors
+function checkSensors():
+  // Read all sensors
+  sensor_states.door_front = digitalRead(GPIO2) == HIGH
+  sensor_states.door_back = digitalRead(GPIO3) == HIGH
+  sensor_states.window_1 = digitalRead(GPIO4) == HIGH
+  sensor_states.window_2 = digitalRead(GPIO5) == HIGH
+  sensor_states.motion_living = digitalRead(GPIO6) == HIGH
+  sensor_states.motion_bedroom = digitalRead(GPIO7) == HIGH
+  sensor_states.glass_break = digitalRead(GPIO8) == HIGH
+  
+  // Check for alarm conditions
+  if armed then
+    if sensor_states.door_front then
+      triggerAlarm("Front Door")
+    end
+    
+    if sensor_states.door_back then
+      triggerAlarm("Back Door")
+    end
+    
+    if sensor_states.window_1 then
+      triggerAlarm("Window 1")
+    end
+    
+    if sensor_states.window_2 then
+      triggerAlarm("Window 2")
+    end
+    
+    if sensor_states.motion_living then
+      triggerAlarm("Living Room Motion")
+    end
+    
+    if sensor_states.motion_bedroom then
+      triggerAlarm("Bedroom Motion")
+    end
+    
+    if sensor_states.glass_break then
+      triggerAlarm("Glass Break")
+    end
+  end
+end
+
+// Function to display status
+function displayStatus():
+  lcd.clear()
+  lcd.setCursor(0, 0)
+  
+  if armed then
+    lcd.print("ARMED")
+  else
+    lcd.print("DISARMED")
+  end
+  
+  lcd.setCursor(0, 1)
+  
+  if alarm_active then
+    lcd.print("ALARM ACTIVE!")
+  else
+    lcd.print("All OK")
+  end
+end
+
+// Main program
+print "=== Security System ==="
+print "Initializing..."
+
+// Initialize
+lcd.clear()
+lcd.setCursor(0, 0)
+lcd.print("Security System")
+lcd.setCursor(0, 1)
+lcd.print("Ready")
+
+// Main loop
+while true
+  // Check sensors
+  checkSensors()
+  
+  // Check arm button
+  if digitalRead(GPIO17) == LOW then
+    if not armed then
+      armSystem()
+    end
+    while digitalRead(GPIO17) == LOW
+      delay(50)
+    end
+  end
+  
+  // Check disarm button
+  if digitalRead(GPIO18) == LOW then
+    if armed then
+      let entered = readCode()
+      if entered == code then
+        disarmSystem()
+      else
+        print "Invalid code"
+        // Flash LED
+        for i in range(3)
+          digitalWrite(GPIO10, LOW)
+          delay(100)
+          digitalWrite(GPIO10, HIGH)
+          delay(100)
+        end
+      end
+    end
+    while digitalRead(GPIO18) == LOW
+      delay(50)
+    end
+  end
+  
+  // Display status
+  displayStatus()
+  
+  delay(100)
+end
