@@ -1,0 +1,163 @@
+// HardwareLang - Weather Station Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program collects weather data and sends it to the cloud
+
+// Initialize the board
+board esp32 = ESP32
+
+// Define sensors
+sensor temperature = Sensor(pin: GPIO36, type: TEMP)
+sensor humidity = Sensor(pin: GPIO39, type: HUMIDITY)
+sensor pressure = Sensor(pin: GPIO34, type: PRESSURE)
+sensor wind_speed = Sensor(pin: GPIO35, type: ANEMOMETER)
+sensor rain_gauge = Sensor(pin: GPIO32, type: RAIN)
+
+// Define display
+display oled = Display(type: SSD1306)
+
+// Define LED indicators
+led status = LED(pin: GPIO2)
+led error = LED(pin: GPIO4)
+
+// Initialize WiFi
+wifi.begin("SSID", "password")
+wifi.connect()
+
+// Initialize MQTT
+mqtt.begin("broker.hivemq.com", 1883)
+mqtt.connect()
+
+// Data storage
+let readings = []
+const UPLOAD_INTERVAL = 300000  // 5 minutes
+
+// Function to read all sensors
+function readAllSensors():
+  let data = {}
+  data.temperature = readTemperature()
+  data.humidity = readHumidity()
+  data.pressure = readPressure()
+  data.wind_speed = readWindSpeed()
+  data.rain = readRain()
+  data.timestamp = millis()
+  return data
+end
+
+// Function to read temperature
+function readTemperature():
+  let raw = analogRead(GPIO36)
+  let temp = (raw / 4095.0) * 100.0
+  return temp
+end
+
+// Function to read humidity
+function readHumidity():
+  let raw = analogRead(GPIO39)
+  let humidity = (raw / 4095.0) * 100.0
+  return humidity
+end
+
+// Function to read pressure
+function readPressure():
+  let raw = analogRead(GPIO34)
+  let pressure = (raw / 4095.0) * 1000.0
+  return pressure
+end
+
+// Function to read wind speed
+function readWindSpeed():
+  let raw = analogRead(GPIO35)
+  let speed = (raw / 4095.0) * 50.0
+  return speed
+end
+
+// Function to read rain
+function readRain():
+  let raw = analogRead(GPIO32)
+  let rain = (raw / 4095.0) * 100.0
+  return rain
+end
+
+// Function to display data on OLED
+function displayData(data):
+  oled.clear()
+  oled.setCursor(0, 0)
+  oled.print("Temp: " + str(data.temperature) + "C")
+  oled.setCursor(0, 1)
+  oled.print("Hum: " + str(data.humidity) + "%")
+  oled.setCursor(0, 2)
+  oled.print("Pres: " + str(data.pressure) + "hPa")
+  oled.setCursor(0, 3)
+  oled.print("Wind: " + str(data.wind_speed) + "m/s")
+  oled.setCursor(0, 4)
+  oled.print("Rain: " + str(data.rain) + "mm")
+end
+
+// Function to upload data to MQTT
+function uploadData(data):
+  let topic = "weather/station/data"
+  let payload = JSON.stringify(data)
+  
+  if mqtt.connected() then
+    mqtt.publish(topic, payload)
+    print "Data uploaded successfully"
+    digitalWrite(GPIO2, HIGH)
+    delay(100)
+    digitalWrite(GPIO2, LOW)
+  else
+    print "MQTT connection lost"
+    digitalWrite(GPIO4, HIGH)
+    delay(100)
+    digitalWrite(GPIO4, LOW)
+  end
+end
+
+// Function to handle errors
+function handleError(error):
+  print "Error:", error
+  digitalWrite(GPIO4, HIGH)
+  delay(1000)
+  digitalWrite(GPIO4, LOW)
+end
+
+// Main program
+print "=== Weather Station ==="
+print "Initializing..."
+
+// Main loop
+while true
+  try
+    // Read sensors
+    let data = readAllSensors()
+    
+    // Store reading
+    readings.push(data)
+    
+    // Keep only last 100 readings
+    if len(readings) > 100 then
+      readings.shift()
+    end
+    
+    // Display data
+    displayData(data)
+    
+    // Log data
+    print "Temp:", data.temperature, "°C"
+    print "Humidity:", data.humidity, "%"
+    print "Pressure:", data.pressure, "hPa"
+    print "Wind:", data.wind_speed, "m/s"
+    print "Rain:", data.rain, "mm"
+    print ""
+    
+    // Upload data periodically
+    if millis() % UPLOAD_INTERVAL == 0 then
+      uploadData(data)
+    end
+    
+  catch error
+    handleError(error)
+  end
+  
+  // Wait before next reading
+  delay(60000)  // 1 minute
+end
