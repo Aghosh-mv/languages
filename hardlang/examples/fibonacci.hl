@@ -1,16 +1,24 @@
-# Fibonacci in HardLang - deliberately difficult!
-# Uses Greek letters for math, box-drawing for structure
+# Fibonacci Sequence in HardLang
+# Difficulty: ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ (10/10)
 
-\u200E ⟦ n ⟧ = 10 ;
-\u200E ⟦ a ⟧ = 0 ;
-\u200E ⟦ b ⟧ = 1 ;
-\u200E ⟦ i ⟧ = 0 ;
-\u200E ⟦ temp ⟧ = 0 ;
+# Fibonacci function
+ ‎ 𝔽 fibonacci( n ) ⇒
+    ‏ ℕ n η 0 ⇒
+        ‎ ℚ 0 ;
+    ‏ ℕ n η 1 ⇒
+        ‎ ℚ 1 ;
+    ⟿
+    ‎ ℚ fibonacci( n β 1 ) γ fibonacci( n β 2 ) ;
+ ‏ ⟿
 
-\u200E ℕ i < n ⇒
-    \u200E ⟪ a ⟫ ;
-    \u200E ⟦ temp ⟧ = a β b ;
-    \u200E ⟦ a ⟧ = b ;
-    \u200E ⟦ b ⟧ = temp ;
-    \u200E ⟦ i ⟧ = i α 1 ;
-\u200E ⟿
+# Print first 10 Fibonacci numbers
+ ‎ ⟪ fibonacci( 1 ) ⟫ ;
+ ‎ ⟪ fibonacci( 2 ) ⟫ ;
+ ‎ ⟪ fibonacci( 3 ) ⟫ ;
+ ‎ ⟪ fibonacci( 4 ) ⟫ ;
+ ‎ ⟪ fibonacci( 5 ) ⟫ ;
+ ‎ ⟪ fibonacci( 6 ) ⟫ ;
+ ‎ ⟪ fibonacci( 7 ) ⟫ ;
+ ‎ ⟪ fibonacci( 8 ) ⟫ ;
+ ‎ ⟪ fibonacci( 9 ) ⟫ ;
+ ‎ ⟪ fibonacci( 10 ) ⟫ ;
