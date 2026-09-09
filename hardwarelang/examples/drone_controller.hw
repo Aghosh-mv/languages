@@ -1,0 +1,313 @@
+// HardwareLang - Drone Controller Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program controls a quadcopter drone
+
+// Initialize the board
+board arduino = Arduino
+
+// Define ESCs (Electronic Speed Controllers)
+esc esc1 = ESC(pin: GPIO3)
+esc esc2 = ESC(pin: GPIO5)
+esc esc3 = ESC(pin: GPIO6)
+esc esc4 = ESC(pin: GPIO9)
+
+// Define sensors
+sensor gyro = Sensor(pin: GPIO10, type: GYRO)
+sensor accel = Sensor(pin: GPIO11, type: ACCEL)
+sensor barometer = Sensor(pin: GPIO12, type: BAROMETER)
+sensor gps = Sensor(pin: GPIO13, type: GPS)
+sensor ultrasonic = Sensor(pin: GPIO14, type: ULTRASONIC)
+
+// Define receiver
+sensor receiver = Sensor(pin: GPIO15, type: RECEIVER)
+
+// Define LED indicators
+led arm_led = LED(pin: GPIO16)
+led battery_led = LED(pin: GPIO17)
+led gps_led = LED(pin: GPIO18)
+
+// Define buzzer
+buzzer beep = Buzzer(pin: GPIO19)
+
+// Define battery sensor
+sensor battery = Sensor(pin: A0, type: BATTERY)
+
+// Flight modes
+const MODE_ACRO = 0
+const MODE_STABILIZE = 1
+const MODE_ALT_HOLD = 2
+const MODE_LOITER = 3
+const MODE_RTL = 4
+const MODE_LAND = 5
+
+// Current mode
+let flight_mode = MODE_STABILIZE
+
+// PID constants for each axis
+const PID_ROLL_KP = 2.0
+const PID_ROLL_KI = 0.1
+const PID_ROLL_KD = 0.5
+
+const PID_PITCH_KP = 2.0
+const PID_PITCH_KI = 0.1
+const PID_PITCH_KD = 0.5
+
+const PID_YAW_KP = 2.0
+const PID_YAW_KI = 0.1
+const PID_YAW_KD = 0.5
+
+const PID_ALT_KP = 2.0
+const PID_ALT_KI = 0.1
+const PID_ALT_KD = 0.5
+
+// PID variables
+let pid_roll = {p: 0, i: 0, d: 0, error: 0, last_error: 0}
+let pid_pitch = {p: 0, i: 0, d: 0, error: 0, last_error: 0}
+let pid_yaw = {p: 0, i: 0, d: 0, error: 0, last_error: 0}
+let pid_alt = {p: 0, i: 0, d: 0, error: 0, last_error: 0}
+
+// Sensor data
+let gyro_data = {x: 0, y: 0, z: 0}
+let accel_data = {x: 0, y: 0, z: 0}
+let barometer_data = {altitude: 0, pressure: 0}
+let gps_data = {latitude: 0, longitude: 0, altitude: 0, satellites: 0}
+let ultrasonic_data = {distance: 0}
+
+// Receiver inputs
+let rc_throttle = 0
+let rc_roll = 0
+let rc_pitch = 0
+let rc_yaw = 0
+let rc_arm = 0
+let rc_mode = 0
+
+// Flight state
+let armed = false
+let altitude = 0
+let target_altitude = 0
+let battery_voltage = 0
+let battery_percent = 100
+
+// Safety limits
+const MIN_THROTTLE = 1000
+const MAX_THROTTLE = 2000
+const MIN_ANGLE = -30
+const MAX_ANGLE = 30
+const MIN_ALTITUDE = 0
+const MAX_ALTITUDE = 100
+const LOW_BATTERY_VOLTAGE = 10.5
+const CRITICAL_BATTERY_VOLTAGE = 10.0
+
+// Function to read sensors
+function readSensors():
+  // Read gyroscope
+  gyro_data.x = readGyroX()
+  gyro_data.y = readGyroY()
+  gyro_data.z = readGyroZ()
+  
+  // Read accelerometer
+  accel_data.x = readAccelX()
+  accel_data.y = readAccelY()
+  accel_data.z = readAccelZ()
+  
+  // Read barometer
+  barometer_data.altitude = readBarometerAltitude()
+  barometer_data.pressure = readBarometerPressure()
+  
+  // Read GPS
+  gps_data.latitude = readGPSLatitude()
+  gps_data.longitude = readGPSLongitude()
+  gps_data.altitude = readGPSAltitude()
+  gps_data.satellites = readGPSSatellites()
+  
+  // Read ultrasonic
+  ultrasonic_data.distance = readUltrasonic()
+  
+  // Read battery
+  battery_voltage = readADC(A0) * (5.0 / 1023.0) * 3  // Voltage divider
+  battery_percent = map(battery_voltage, 10.0, 12.6, 0, 100)
+end
+
+// Function to read receiver inputs
+function readReceiver():
+  rc_throttle = pulseIn(GPIO15, HIGH)
+  rc_roll = pulseIn(GPIO16, HIGH)
+  rc_pitch = pulseIn(GPIO17, HIGH)
+  rc_yaw = pulseIn(GPIO18, HIGH)
+  rc_arm = pulseIn(GPIO19, HIGH)
+  
+  // Map values to -1000 to 1000 (except throttle 0 to 1000)
+  rc_throttle = map(rc_throttle, 1000, 2000, 0, 1000)
+  rc_roll = map(rc_roll, 1000, 2000, -1000, 1000)
+  rc_pitch = map(rc_pitch, 1000, 2000, -1000, 1000)
+  rc_yaw = map(rc_yaw, 1000, 2000, -1000, 1000)
+  
+  // Arm/disarm
+  if rc_arm > 500 and not armed then
+    armDrone()
+  else if rc_arm < 500 and armed then
+    disarmDrone()
+  end
+end
+
+// Function to arm drone
+function armDrone():
+  print "Arming drone..."
+  
+  // Check safety conditions
+  if battery_voltage < LOW_BATTERY_VOLTAGE then
+    print "Battery too low to arm"
+    return
+  end
+  
+  // Wait for throttle to be minimum
+  if rc_throttle > 1100 then
+    print "Throttle must be minimum to arm"
+    return
+  end
+  
+  // Arm ESCs
+  escWrite(esc1, 1000)
+  escWrite(esc2, 1000)
+  escWrite(esc3, 1000)
+  escWrite(esc4, 1000)
+  
+  armed = true
+  digitalWrite(GPIO16, HIGH)
+  
+  // Beep to confirm
+  digitalWrite(GPIO19, HIGH)
+  delay(100)
+  digitalWrite(GPIO19, LOW)
+  
+  print "Drone armed"
+end
+
+// Function to disarm drone
+function disarmDrone():
+  print "Disarming drone..."
+  
+  // Stop all motors
+  escWrite(esc1, 1000)
+  escWrite(esc2, 1000)
+  escWrite(esc3, 1000)
+  escWrite(esc4, 1000)
+  
+  armed = false
+  digitalWrite(GPIO16, LOW)
+  
+  // Reset PID
+  pid_roll.error = 0
+  pid_roll.last_error = 0
+  pid_roll.i = 0
+  pid_pitch.error = 0
+  pid_pitch.last_error = 0
+  pid_pitch.i = 0
+  pid_yaw.error = 0
+  pid_yaw.last_error = 0
+  pid_yaw.i = 0
+  pid_alt.error = 0
+  pid_alt.last_error = 0
+  pid_alt.i = 0
+  
+  print "Drone disarmed"
+end
+
+// Function to calculate PID
+function calculatePID(axis, target, current, dt):
+  let error = target - current
+  
+  // Proportional
+  let p = error * KP
+  
+  // Integral
+  let i = integral * KI
+  
+  // Derivative
+  let derivative = (error - last_error) / dt
+  let d = derivative * KD
+  
+  // Update state
+  last_error = error
+  integral = integral + error * dt
+  
+  return p + i + d
+end
+
+// Function to control motors
+function controlMotors(throttle, roll, pitch, yaw):
+  // Mix motors
+  let motor1 = throttle + roll + pitch + yaw
+  let motor2 = throttle - roll + pitch - yaw
+  let motor3 = throttle - roll - pitch + yaw
+  let motor4 = throttle + roll - pitch - yaw
+  
+  // Constrain values
+  motor1 = constrain(motor1, 1000, 2000)
+  motor2 = constrain(motor2, 1000, 2000)
+  motor3 = constrain(motor3, 1000, 2000)
+  motor4 = constrain(motor4, 1000, 2000)
+  
+  // Write to ESCs
+  escWrite(esc1, motor1)
+  escWrite(esc2, motor2)
+  escWrite(esc3, motor3)
+  escWrite(esc4, motor4)
+end
+
+// Function to check safety
+function checkSafety():
+  // Check battery
+  if battery_voltage < CRITICAL_BATTERY_VOLTAGE then
+    print "CRITICAL BATTERY - Landing immediately!"
+    flight_mode = MODE_LAND
+  else if battery_voltage < LOW_BATTERY_VOLTAGE then
+    print "Low battery warning"
+    digitalWrite(GPIO17, HIGH)
+  else
+    digitalWrite(GPIO17, LOW)
+  end
+  
+  // Check altitude
+  if altitude > MAX_ALTITUDE then
+    print "Maximum altitude reached"
+  end
+  
+  // Check GPS
+  if gps_data.satellites < 6 then
+    digitalWrite(GPIO18, LOW)
+  else
+    digitalWrite(GPIO18, HIGH)
+  end
+end
+
+// Main program
+print "=== Drone Controller ==="
+print "Initializing..."
+
+// Main loop
+while true
+  // Read sensors
+  readSensors()
+  
+  // Read receiver
+  readReceiver()
+  
+  // Check safety
+  checkSafety()
+  
+  // If armed, control drone
+  if armed then
+    // Calculate PID for each axis
+    let roll_output = calculatePID(ROLL, rc_roll / 10, gyro_data.x, 0.01)
+    let pitch_output = calculatePID(PITCH, rc_pitch / 10, gyro_data.y, 0.01)
+    let yaw_output = calculatePID(YAW, rc_yaw / 10, gyro_data.z, 0.01)
+    let alt_output = calculatePID(ALT, target_altitude, barometer_data.altitude, 0.01)
+    
+    // Control motors
+    controlMotors(rc_throttle, roll_output, pitch_output, yaw_output)
+  end
+  
+  // Small delay
+  delay(10)
+end
