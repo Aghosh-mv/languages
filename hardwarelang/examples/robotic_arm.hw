@@ -1,0 +1,214 @@
+// HardwareLang - Robotic Arm Control Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program controls a 6-axis robotic arm
+
+// Initialize the board
+board arduino = Arduino
+
+// Define servo motors for each joint
+servo base = Servo(pin: GPIO3)
+servo shoulder = Servo(pin: GPIO5)
+servo elbow = Servo(pin: GPIO6)
+servo wrist = Servo(pin: GPIO9)
+servo gripper = Servo(pin: GPIO10)
+
+// Define sensors
+sensor pot_base = Sensor(pin: A0, type: POTENTIOMETER)
+sensor pot_shoulder = Sensor(pin: A1, type: POTENTIOMETER)
+sensor pot_elbow = Sensor(pin: A2, type: POTENTIOMETER)
+sensor pot_wrist = Sensor(pin: A3, type: POTENTIOMETER)
+
+// Define buttons
+button btn_home = Button(pin: GPIO11)
+button btn_grab = Button(pin: GPIO12)
+button btn_release = Button(pin: GPIO13)
+
+// Initialize serial communication
+uart.begin(9600)
+
+// Safety limits
+const MIN_ANGLE = 0
+const MAX_ANGLE = 180
+const SPEED_LIMIT = 50
+
+// Current positions
+let current_positions = {
+  base: 90,
+  shoulder: 90,
+  elbow: 90,
+  wrist: 90,
+  gripper: 90
+}
+
+// Function to constrain angle
+function constrainAngle(angle):
+  if angle < MIN_ANGLE then
+    return MIN_ANGLE
+  end
+  if angle > MAX_ANGLE then
+    return MAX_ANGLE
+  end
+  return angle
+end
+
+// Function to move joint with speed limit
+function moveJoint(joint, target_angle, speed):
+  let current = current_positions[joint]
+  let diff = target_angle - current
+  let steps = abs(diff)
+  let step_size = 1
+  
+  if steps > 0 then
+    let delay_time = 1000 / (speed * steps)
+    
+    for i in range(steps)
+      if diff > 0 then
+        current = current + step_size
+      else
+        current = current - step_size
+      end
+      
+      // Move the appropriate joint
+      if joint == "base" then
+        servoWrite(base, current)
+      else if joint == "shoulder" then
+        servoWrite(shoulder, current)
+      else if joint == "elbow" then
+        servoWrite(elbow, current)
+      else if joint == "wrist" then
+        servoWrite(wrist, current)
+      else if joint == "gripper" then
+        servoWrite(gripper, current)
+      end
+      
+      current_positions[joint] = current
+      delay(delay_time)
+    end
+  end
+end
+
+// Function to move to home position
+function goHome():
+  print "Moving to home position..."
+  moveJoint("base", 90, SPEED_LIMIT)
+  moveJoint("shoulder", 90, SPEED_LIMIT)
+  moveJoint("elbow", 90, SPEED_LIMIT)
+  moveJoint("wrist", 90, SPEED_LIMIT)
+  moveJoint("gripper", 90, SPEED_LIMIT)
+  print "Home position reached"
+end
+
+// Function to grab object
+function grabObject():
+  print "Grabbing object..."
+  moveJoint("gripper", 30, SPEED_LIMIT)
+  delay(500)
+  print "Object grabbed"
+end
+
+// Function to release object
+function releaseObject():
+  print "Releasing object..."
+  moveJoint("gripper", 90, SPEED_LIMIT)
+  delay(500)
+  print "Object released"
+end
+
+// Function to read potentiometer values
+function readPotentiometers():
+  let base_angle = map(readADC(A0), 0, 1023, 0, 180)
+  let shoulder_angle = map(readADC(A1), 0, 1023, 0, 180)
+  let elbow_angle = map(readADC(A2), 0, 1023, 0, 180)
+  let wrist_angle = map(readADC(A3), 0, 1023, 0, 180)
+  
+  return {
+    base: constrainAngle(base_angle),
+    shoulder: constrainAngle(shoulder_angle),
+    elbow: constrainAngle(elbow_angle),
+    wrist: constrainAngle(wrist_angle)
+  }
+end
+
+// Function to display current positions
+function displayPositions():
+  uart.print("Base: ")
+  uart.print(current_positions.base)
+  uart.print(" Shoulder: ")
+  uart.print(current_positions.shoulder)
+  uart.print(" Elbow: ")
+  uart.print(current_positions.elbow)
+  uart.print(" Wrist: ")
+  uart.print(current_positions.wrist)
+  uart.print(" Gripper: ")
+  uart.println(current_positions.gripper)
+end
+
+// Function to handle emergency stop
+function emergencyStop():
+  print "EMERGENCY STOP!"
+  // Stop all motors
+  servoWrite(base, current_positions.base)
+  servoWrite(shoulder, current_positions.shoulder)
+  servoWrite(elbow, current_positions.elbow)
+  servoWrite(wrist, current_positions.wrist)
+  servoWrite(gripper, current_positions.gripper)
+end
+
+// Main program
+print "=== Robotic Arm Control ==="
+print "Initializing..."
+
+// Go to home position
+goHome()
+
+// Main loop
+while true
+  // Check for emergency stop
+  if digitalRead(GPIO11) == LOW then
+    emergencyStop()
+    while digitalRead(GPIO11) == LOW
+      delay(100)
+    end
+  end
+  
+  // Check for grab button
+  if digitalRead(GPIO12) == LOW then
+    grabObject()
+    while digitalRead(GPIO12) == LOW
+      delay(100)
+    end
+  end
+  
+  // Check for release button
+  if digitalRead(GPIO13) == LOW then
+    releaseObject()
+    while digitalRead(GPIO13) == LOW
+      delay(100)
+    end
+  end
+  
+  // Read potentiometers and move joints
+  let positions = readPotentiometers()
+  
+  // Only move if there's significant change
+  if abs(positions.base - current_positions.base) > 5 then
+    moveJoint("base", positions.base, SPEED_LIMIT)
+  end
+  
+  if abs(positions.shoulder - current_positions.shoulder) > 5 then
+    moveJoint("shoulder", positions.shoulder, SPEED_LIMIT)
+  end
+  
+  if abs(positions.elbow - current_positions.elbow) > 5 then
+    moveJoint("elbow", positions.elbow, SPEED_LIMIT)
+  end
+  
+  if abs(positions.wrist - current_positions.wrist) > 5 then
+    moveJoint("wrist", positions.wrist, SPEED_LIMIT)
+  end
+  
+  // Display current positions
+  displayPositions()
+  
+  delay(100)
+end
