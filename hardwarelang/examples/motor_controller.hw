@@ -1,0 +1,250 @@
+// HardwareLang - Motor Controller Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program controls multiple motors with PID control
+
+// Initialize the board
+board arduino = Arduino
+
+// Define motors
+motor motor1 = Motor(pin_fwd: GPIO5, pin_bwd: GPIO6)
+motor motor2 = Motor(pin_fwd: GPIO9, pin_bwd: GPIO10)
+motor motor3 = Motor(pin_fwd: GPIO11, pin_bwd: GPIO12)
+motor motor4 = Motor(pin_fwd: GPIO13, pin_bwd: GPIO14)
+
+// Define encoders
+sensor encoder1 = Sensor(pin: GPIO2, type: ENCODER)
+sensor encoder2 = Sensor(pin: GPIO3, type: ENCODER)
+sensor encoder3 = Sensor(pin: GPIO4, type: ENCODER)
+sensor encoder4 = Sensor(pin: GPIO7, type: ENCODER)
+
+// Define buttons
+button btn_start = Button(pin: GPIO8)
+button btn_stop = Button(pin: GPIO15)
+button btn_speed_up = Button(pin: GPIO16)
+button btn_speed_down = Button(pin: GPIO17)
+
+// Define potentiometer for speed control
+sensor speed_pot = Sensor(pin: A0, type: POTENTIOMETER)
+
+// Define display
+display lcd = Display(type: LCD16X2)
+
+// PID constants
+const KP = 2.0
+const KI = 0.1
+const KD = 0.5
+
+// Motor state
+let motors_running = false
+let target_speed = 100
+let max_speed = 255
+let min_speed = 0
+
+// Encoder counts
+let encoder_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+let last_encoder_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+let motor_speeds = {1: 0, 2: 0, 3: 0, 4: 0}
+
+// PID variables
+let pid_errors = {1: 0, 2: 0, 3: 0, 4: 0}
+let pid_integrals = {1: 0, 2: 0, 3: 0, 4: 0}
+let pid_derivatives = {1: 0, 2: 0, 3: 0, 4: 0}
+let last_pid_errors = {1: 0, 2: 0, 3: 0, 4: 0}
+
+// Function to read encoder
+function readEncoder(motor_id):
+  if motor_id == 1 then
+    return digitalRead(GPIO2)
+  else if motor_id == 2 then
+    return digitalRead(GPIO3)
+  else if motor_id == 3 then
+    return digitalRead(GPIO4)
+  else if motor_id == 4 then
+    return digitalRead(GPIO7)
+  end
+  return 0
+end
+
+// Function to update encoder counts
+function updateEncoders():
+  for i in range(1, 5)
+    let current = readEncoder(i)
+    let last = last_encoder_counts[i]
+    
+    // Detect rising edge
+    if current == HIGH and last == LOW then
+      encoder_counts[i] = encoder_counts[i] + 1
+    end
+    
+    last_encoder_counts[i] = current
+  end
+end
+
+// Function to calculate motor speed
+function calculateSpeeds():
+  let current_time = millis()
+  
+  for i in range(1, 5)
+    let pulses = encoder_counts[i] - last_encoder_counts[i]
+    // Assuming 20 pulses per revolution
+    motor_speeds[i] = (pulses * 60 * 1000) / (20 * 100)  // RPM
+    last_encoder_counts[i] = encoder_counts[i]
+  end
+end
+
+// Function to PID control
+function pidControl(motor_id, target, current):
+  // Calculate error
+  let error = target - current
+  pid_errors[motor_id] = error
+  
+  // Proportional term
+  let p = error * KP
+  
+  // Integral term
+  pid_integrals[motor_id] = pid_integrals[motor_id] + error
+  let i = pid_integrals[motor_id] * KI
+  
+  // Derivative term
+  let derivative = error - last_pid_errors[motor_id]
+  pid_derivatives[motor_id] = derivative
+  let d = derivative * KD
+  
+  // Save for next iteration
+  last_pid_errors[motor_id] = error
+  
+  // Calculate output
+  let output = p + i + d
+  
+  // Constrain output
+  if output > max_speed then output = max_speed end
+  if output < -max_speed then output = -max_speed end
+  
+  return output
+end
+
+// Function to move motor
+function moveMotor(motor_id, speed):
+  let motor = null
+  if motor_id == 1 then
+    motor = motor1
+  else if motor_id == 2 then
+    motor = motor2
+  else if motor_id == 3 then
+    motor = motor3
+  else if motor_id == 4 then
+    motor = motor4
+  end
+  
+  if speed > 0 then
+    motorControl(motor, FWD, speed)
+  else if speed < 0 then
+    motorControl(motor, BWD, abs(speed))
+  else
+    motorControl(motor, STOP, 0)
+  end
+end
+
+// Function to stop all motors
+function stopAllMotors():
+  motorControl(motor1, STOP, 0)
+  motorControl(motor2, STOP, 0)
+  motorControl(motor3, STOP, 0)
+  motorControl(motor4, STOP, 0)
+  motors_running = false
+end
+
+// Function to start all motors
+function startAllMotors():
+  motors_running = true
+end
+
+// Function to display status
+function displayStatus():
+  lcd.clear()
+  lcd.setCursor(0, 0)
+  lcd.print("Target: " + str(target_speed) + " RPM")
+  
+  lcd.setCursor(0, 1)
+  lcd.print("M1:" + str(motor_speeds[1]))
+  lcd.print(" M2:" + str(motor_speeds[2]))
+  
+  // Update every 500ms
+  delay(500)
+  
+  lcd.clear()
+  lcd.setCursor(0, 0)
+  lcd.print("M3:" + str(motor_speeds[3]))
+  lcd.print(" M4:" + str(motor_speeds[4]))
+  
+  lcd.setCursor(0, 1)
+  if motors_running then
+    lcd.print("RUNNING")
+  else
+    lcd.print("STOPPED")
+  end
+end
+
+// Main program
+print "=== Motor Controller ==="
+print "Initializing..."
+
+// Main loop
+while true
+  // Update encoders
+  updateEncoders()
+  
+  // Calculate speeds
+  calculateSpeeds()
+  
+  // Check buttons
+  if digitalRead(GPIO8) == LOW then
+    startAllMotors()
+    while digitalRead(GPIO8) == LOW
+      delay(50)
+    end
+  end
+  
+  if digitalRead(GPIO15) == LOW then
+    stopAllMotors()
+    while digitalRead(GPIO15) == LOW
+      delay(50)
+    end
+  end
+  
+  if digitalRead(GPIO16) == LOW then
+    target_speed = target_speed + 10
+    if target_speed > max_speed then
+      target_speed = max_speed
+    end
+    while digitalRead(GPIO16) == LOW
+      delay(50)
+    end
+  end
+  
+  if digitalRead(GPIO17) == LOW then
+    target_speed = target_speed - 10
+    if target_speed < min_speed then
+      target_speed = min_speed
+    end
+    while digitalRead(GPIO17) == LOW
+      delay(50)
+    end
+  end
+  
+  // Read speed potentiometer
+  target_speed = map(readADC(A0), 0, 1023, min_speed, max_speed)
+  
+  // If motors are running, apply PID control
+  if motors_running then
+    for i in range(1, 5)
+      let output = pidControl(i, target_speed, motor_speeds[i])
+      moveMotor(i, output)
+    end
+  end
+  
+  // Display status
+  displayStatus()
+  
+  delay(10)  // Small delay for stability
+end
