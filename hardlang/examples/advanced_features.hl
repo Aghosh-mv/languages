@@ -1,0 +1,25 @@
+# Advanced HardLang Features
+# Difficulty: ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ (10/10)
+
+# Advanced loop with complex conditions
+ ‎ 𝔽 complex_loop( n ) ⇒
+    ‏ ℕ i η 0 ⟿ i < n ⟿ i γ 1 ⇒
+        ‎ ⟪ i ⟫ ;
+        ‎ ‏ ℕ j η 0 ⟿ j < i ⟿ j γ 1 ⇒
+            ‎ ⟪ j ⟫ ;
+        ‏ ⟿
+    ‏ ⟿
+ ‏ ⟿
+
+ ‎ ⟪ complex_loop( 5 ) ⟫ ;
+
+# Nested function calls
+ ‎ 𝔽 add( a, b ) ⇒
+    ‎ ℚ a γ b ;
+ ‏ ⟿
+
+ ‎ 𝔽 multiply( a, b ) ⇒
+    ‎ ℚ a β b ;
+ ‏ ⟿
+
+ ‎ ⟪ add( multiply( 2, 3 ), multiply( 4, 5 ) ) ⟫ ;
