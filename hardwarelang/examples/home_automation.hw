@@ -1,0 +1,281 @@
+// HardwareLang - Home Automation System Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program controls lights, fans, and security system
+
+// Initialize the board
+board esp32 = ESP32
+
+// Define devices
+relay light_living = Relay(pin: GPIO12)
+relay light_bedroom = Relay(pin: GPIO13)
+relay light_kitchen = Relay(pin: GPIO14)
+relay fan_living = Relay(pin: GPIO15)
+relay fan_bedroom = Relay(pin: GPIO16)
+relay door_lock = Relay(pin: GPIO17)
+
+// Define sensors
+sensor pir_living = Sensor(pin: GPIO25, type: PIR)
+sensor pir_bedroom = Sensor(pin: GPIO26, type: PIR)
+sensor door_sensor = Sensor(pin: GPIO27, type: DOOR)
+sensor light_sensor = Sensor(pin: GPIO32, type: LIGHT)
+sensor temperature = Sensor(pin: GPIO33, type: TEMP)
+
+// Define buttons
+button btn_living = Button(pin: GPIO34)
+button btn_bedroom = Button(pin: GPIO35)
+button btn_kitchen = Button(pin: GPIO36)
+button btn_alarm = Button(pin: GPIO39)
+
+// Define display
+display oled = Display(type: SSD1306)
+
+// Initialize WiFi
+wifi.begin("SSID", "password")
+wifi.connect()
+
+// Initialize MQTT
+mqtt.begin("broker.hivemq.com", 1883)
+mqtt.connect()
+
+// System state
+let state = {
+  lights: {
+    living: false,
+    bedroom: false,
+    kitchen: false
+  },
+  fans: {
+    living: false,
+    bedroom: false
+  },
+  security: {
+    armed: false,
+    alarm: false
+  },
+  door: {
+    locked: true
+  }
+}
+
+// Constants
+const LIGHT_THRESHOLD = 300
+const TEMP_THRESHOLD = 25.0
+
+// Function to control lights
+function controlLights():
+  // Living room light
+  if digitalRead(GPIO25) == HIGH or digitalRead(GPIO34) == LOW then
+    if state.lights.living == false then
+      state.lights.living = true
+      digitalWrite(GPIO12, HIGH)
+      print "Living room light ON"
+      mqtt.publish("home/lights/living", "ON")
+    end
+  else
+    if state.lights.living == true then
+      state.lights.living = false
+      digitalWrite(GPIO12, LOW)
+      print "Living room light OFF"
+      mqtt.publish("home/lights/living", "OFF")
+    end
+  end
+  
+  // Bedroom light
+  if digitalRead(GPIO26) == HIGH or digitalRead(GPIO35) == LOW then
+    if state.lights.bedroom == false then
+      state.lights.bedroom = true
+      digitalWrite(GPIO13, HIGH)
+      print "Bedroom light ON"
+      mqtt.publish("home/lights/bedroom", "ON")
+    end
+  else
+    if state.lights.bedroom == true then
+      state.lights.bedroom = false
+      digitalWrite(GPIO13, LOW)
+      print "Bedroom light OFF"
+      mqtt.publish("home/lights/bedroom", "OFF")
+    end
+  end
+  
+  // Kitchen light (based on light sensor)
+  let light_level = readADC(GPIO32)
+  if light_level < LIGHT_THRESHOLD then
+    if state.lights.kitchen == false then
+      state.lights.kitchen = true
+      digitalWrite(GPIO14, HIGH)
+      print "Kitchen light ON"
+      mqtt.publish("home/lights/kitchen", "ON")
+    end
+  else
+    if state.lights.kitchen == true then
+      state.lights.kitchen = false
+      digitalWrite(GPIO14, LOW)
+      print "Kitchen light OFF"
+      mqtt.publish("home/lights/kitchen", "OFF")
+    end
+  end
+end
+
+// Function to control fans
+function controlFans():
+  let temp = readADC(GPIO33) * 0.48828125
+  
+  // Living room fan
+  if temp > TEMP_THRESHOLD then
+    if state.fans.living == false then
+      state.fans.living = true
+      digitalWrite(GPIO15, HIGH)
+      print "Living room fan ON"
+      mqtt.publish("home/fans/living", "ON")
+    end
+  else
+    if state.fans.living == true then
+      state.fans.living = false
+      digitalWrite(GPIO15, LOW)
+      print "Living room fan OFF"
+      mqtt.publish("home/fans/living", "OFF")
+    end
+  end
+  
+  // Bedroom fan (based on PIR sensor)
+  if digitalRead(GPIO26) == HIGH then
+    if state.fans.bedroom == false then
+      state.fans.bedroom = true
+      digitalWrite(GPIO16, HIGH)
+      print "Bedroom fan ON"
+      mqtt.publish("home/fans/bedroom", "ON")
+    end
+  else
+    if state.fans.bedroom == true then
+      state.fans.bedroom = false
+      digitalWrite(GPIO16, LOW)
+      print "Bedroom fan OFF"
+      mqtt.publish("home/fans/bedroom", "OFF")
+    end
+  end
+end
+
+// Function to control security system
+function controlSecurity():
+  // Check if door is open
+  if digitalRead(GPIO27) == HIGH then
+    if state.security.armed == true then
+      state.security.alarm = true
+      print "ALARM: Door opened while armed!"
+      mqtt.publish("home/security/alarm", "ON")
+      // Sound alarm (could be a buzzer)
+      for i in range(10)
+        digitalWrite(GPIO2, HIGH)
+        delay(100)
+        digitalWrite(GPIO2, LOW)
+        delay(100)
+      end
+    end
+  end
+  
+  // Check alarm button
+  if digitalRead(GPIO39) == LOW then
+    state.security.alarm = false
+    state.security.armed = false
+    print "Alarm disabled"
+    mqtt.publish("home/security/alarm", "OFF")
+    mqtt.publish("home/security/armed", "OFF")
+    while digitalRead(GPIO39) == LOW
+      delay(100)
+    end
+  end
+end
+
+// Function to control door lock
+function controlDoor():
+  if digitalRead(GPIO34) == LOW then
+    if state.door.locked == true then
+      state.door.locked = false
+      digitalWrite(GPIO17, LOW)
+      print "Door unlocked"
+      mqtt.publish("home/door", "UNLOCKED")
+    end
+    while digitalRead(GPIO34) == LOW
+      delay(100)
+    end
+  end
+end
+
+// Function to display status
+function displayStatus():
+  oled.clear()
+  oled.setCursor(0, 0)
+  oled.print("=== Home Status ===")
+  
+  oled.setCursor(0, 1)
+  oled.print("Lights: ")
+  if state.lights.living then oled.print("L ") end
+  if state.lights.bedroom then oled.print("B ") end
+  if state.lights.kitchen then oled.print("K ") end
+  
+  oled.setCursor(0, 2)
+  oled.print("Fans: ")
+  if state.fans.living then oled.print("L ") end
+  if state.fans.bedroom then oled.print("B ") end
+  
+  oled.setCursor(0, 3)
+  oled.print("Security: ")
+  if state.security.armed then oled.print("ARMED") end
+  if state.security.alarm then oled.print("ALARM!") end
+  
+  oled.setCursor(0, 4)
+  oled.print("Door: ")
+  if state.door.locked then oled.print("LOCKED") end
+end
+
+// Main program
+print "=== Home Automation System ==="
+print "Initializing..."
+
+// Go to safe state
+goHome()
+
+// Main loop
+while true
+  // Control all systems
+  controlLights()
+  controlFans()
+  controlSecurity()
+  controlDoor()
+  
+  // Display status
+  displayStatus()
+  
+  // Send status via MQTT every 30 seconds
+  if millis() % 30000 == 0 then
+    mqtt.publish("home/status", JSON.stringify(state))
+  end
+  
+  delay(100)
+end
+
+function goHome():
+  // Turn off all lights
+  digitalWrite(GPIO12, LOW)
+  digitalWrite(GPIO13, LOW)
+  digitalWrite(GPIO14, LOW)
+  
+  // Turn off all fans
+  digitalWrite(GPIO15, LOW)
+  digitalWrite(GPIO16, LOW)
+  
+  // Lock door
+  digitalWrite(GPIO17, HIGH)
+  
+  // Reset state
+  state.lights.living = false
+  state.lights.bedroom = false
+  state.lights.kitchen = false
+  state.fans.living = false
+  state.fans.bedroom = false
+  state.security.armed = false
+  state.security.alarm = false
+  state.door.locked = true
+  
+  print "System initialized to safe state"
+end
