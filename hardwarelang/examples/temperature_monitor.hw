@@ -1,0 +1,103 @@
+// HardwareLang - Temperature Monitor Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program monitors temperature and controls a fan
+
+// Initialize the board
+board arduino = Arduino
+
+// Define sensors and actuators
+sensor temperature = Sensor(pin: A0, type: TEMP)
+sensor humidity = Sensor(pin: A1, type: HUMIDITY)
+led indicator = LED(pin: GPIO13)
+motor fan = Motor(pin_fwd: GPIO5, pin_bwd: GPIO6)
+relay heater = Relay(pin: GPIO7)
+display lcd = Display(type: LCD16X2)
+
+// Define thresholds
+const TEMP_HIGH = 30.0
+const TEMP_LOW = 18.0
+const HUMIDITY_HIGH = 70.0
+
+// Initialize serial communication
+uart.begin(9600)
+
+// Function to read temperature
+function readTemperature():
+  let raw = readADC(A0)
+  let voltage = raw * (5.0 / 1023.0)
+  let tempC = (voltage - 0.5) * 100.0
+  return tempC
+end
+
+// Function to read humidity
+function readHumidity():
+  let raw = readADC(A1)
+  let humidity = raw * (100.0 / 1023.0)
+  return humidity
+end
+
+// Function to control fan based on temperature
+function controlFan(temp):
+  if temp > TEMP_HIGH then
+    motorControl(fan, FWD, 255)
+    digitalWrite(GPIO13, HIGH)
+    print "Fan ON - Temperature:", temp, "°C"
+  else
+    motorControl(fan, STOP, 0)
+    digitalWrite(GPIO13, LOW)
+  end
+end
+
+// Function to control heater based on temperature
+function controlHeater(temp):
+  if temp < TEMP_LOW then
+    digitalWrite(GPIO7, HIGH)
+    print "Heater ON - Temperature:", temp, "°C"
+  else
+    digitalWrite(GPIO7, LOW)
+  end
+end
+
+// Function to display readings
+function displayReadings(temp, humidity):
+  lcd.clear()
+  lcd.setCursor(0, 0)
+  lcd.print("Temp: " + str(temp) + " C")
+  lcd.setCursor(0, 1)
+  lcd.print("Hum: " + str(humidity) + " %")
+end
+
+// Function to log data
+function logData(temp, humidity):
+  uart.print("T:" + str(temp) + ",H:" + str(humidity))
+  uart.println("")
+end
+
+// Main program
+print "=== Temperature Monitor ==="
+print "Initializing..."
+
+// Main loop
+while true
+  // Read sensors
+  let temp = readTemperature()
+  let humidity = readHumidity()
+  
+  // Display readings
+  displayReadings(temp, humidity)
+  
+  // Log data
+  logData(temp, humidity)
+  
+  // Control devices
+  controlFan(temp)
+  controlHeater(temp)
+  
+  // Check humidity
+  if humidity > HUMIDITY_HIGH then
+    print "High humidity warning:", humidity, "%"
+  end
+  
+  // Wait before next reading
+  delay(1000)
+end
