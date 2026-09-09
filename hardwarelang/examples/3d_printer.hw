@@ -1,0 +1,349 @@
+// HardwareLang - 3D Printer Controller Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program controls a 3D printer
+
+// Initialize the board
+board arduino = Arduino
+
+// Define stepper motors
+stepper x_stepper = Stepper(pin_step: GPIO2, pin_dir: GPIO3)
+stepper y_stepper = Stepper(pin_step: GPIO4, pin_dir: GPIO5)
+stepper z_stepper = Stepper(pin_step: GPIO6, pin_dir: GPIO7)
+stepper e_stepper = Stepper(pin_step: GPIO8, pin_dir: GPIO9)
+
+// Define temperature sensors
+sensor hotend_temp = Sensor(pin: A0, type: TEMP)
+sensor bed_temp = Sensor(pin: A1, type: TEMP)
+
+// Define heaters
+relay hotend_heater = Relay(pin: GPIO10)
+relay bed_heater = Relay(pin: GPIO11)
+
+// Define fans
+relay hotend_fan = Relay(pin: GPIO12)
+relay part_fan = Relay(pin: GPIO13)
+
+// Define endstops
+sensor x_endstop = Sensor(pin: GPIO14, type: ENDSTOP)
+sensor y_endstop = Sensor(pin: GPIO15, type: ENDSTOP)
+sensor z_endstop = Sensor(pin: GPIO16, type: ENDSTOP)
+
+// Define display
+display lcd = Display(type: LCD16X2)
+
+// Define SD card
+sd_card = SD(cs: GPIO17)
+
+// Define buttons
+button btn_x_plus = Button(pin: GPIO18)
+button btn_x_minus = Button(pin: GPIO19)
+button btn_y_plus = Button(pin: GPIO20)
+button btn_y_minus = Button(pin: GPIO21)
+button btn_z_plus = Button(pin: GPIO22)
+button btn_z_minus = Button(pin: GPIO23)
+button btn_home = Button(pin: GPIO24)
+button btn_start = Button(pin: GPIO25)
+
+// Printer state
+let printer_state = "IDLE"  // IDLE, HEATING, PRINTING, PAUSED, ERROR
+let x_pos = 0
+let y_pos = 0
+let z_pos = 0
+let e_pos = 0
+
+// Temperature targets
+let hotend_target = 200
+let bed_target = 60
+
+// PID for hotend
+let hotend_pid = {p: 0, i: 0, d: 0, error: 0, last_error: 0, integral: 0}
+const HOTEND_KP = 2.0
+const HOTEND_KI = 0.1
+const HOTEND_KD = 0.5
+
+// PID for bed
+let bed_pid = {p: 0, i: 0, d: 0, error: 0, last_error: 0, integral: 0}
+const BED_KP = 2.0
+const BED_KI = 0.1
+const BED_KD = 0.5
+
+// Movement settings
+let feed_rate = 1000  // mm/min
+let max_feed_rate = 5000
+let steps_per_mm = 80
+
+// Function to read temperatures
+function readTemperatures():
+  let hotend_raw = readADC(A0)
+  let bed_raw = readADC(A1)
+  
+  // Convert to temperature (simplified)
+  let hotend_temp = (hotend_raw / 1023.0) * 300.0
+  let bed_temp = (bed_raw / 1023.0) * 150.0
+  
+  return {hotend: hotend_temp, bed: bed_temp}
+end
+
+// Function to control hotend temperature
+function controlHotend(target, current):
+  let error = target - current
+  
+  // PID calculation
+  hotend_pid.error = error
+  hotend_pid.p = error * HOTEND_KP
+  hotend_pid.integral = hotend_pid.integral + error
+  hotend_pid.i = hotend_pid.integral * HOTEND_KI
+  hotend_pid.d = (error - hotend_pid.last_error) * HOTEND_KD
+  hotend_pid.last_error = error
+  
+  let output = hotend_pid.p + hotend_pid.i + hotend_pid.d
+  
+  // Control heater
+  if output > 0 then
+    digitalWrite(GPIO10, HIGH)
+  else
+    digitalWrite(GPIO10, LOW)
+  end
+end
+
+// Function to control bed temperature
+function controlBed(target, current):
+  let error = target - current
+  
+  // PID calculation
+  bed_pid.error = error
+  bed_pid.p = error * BED_KP
+  bed_pid.integral = bed_pid.integral + error
+  bed_pid.i = bed_pid.integral * BED_KI
+  bed_pid.d = (error - bed_pid.last_error) * BED_KD
+  bed_pid.last_error = error
+  
+  let output = bed_pid.p + bed_pid.i + bed_pid.d
+  
+  // Control heater
+  if output > 0 then
+    digitalWrite(GPIO11, HIGH)
+  else
+    digitalWrite(GPIO11, LOW)
+  end
+end
+
+// Function to move stepper
+function moveStepper(stepper, steps, direction):
+  if direction == "FWD" then
+    digitalWrite(stepper.pin_dir, HIGH)
+  else
+    digitalWrite(stepper.pin_dir, LOW)
+  end
+  
+  for i in range(abs(steps))
+    digitalWrite(stepper.pin_step, HIGH)
+    delayMicroseconds(100)
+    digitalWrite(stepper.pin_step, LOW)
+    delayMicroseconds(100)
+  end
+end
+
+// Function to home axes
+function homeAxes():
+  print "Homing axes..."
+  
+  // Home X axis
+  while digitalRead(GPIO14) == LOW
+    moveStepper(x_stepper, 1, "BWD")
+  end
+  x_pos = 0
+  
+  // Home Y axis
+  while digitalRead(GPIO15) == LOW
+    moveStepper(y_stepper, 1, "BWD")
+  end
+  y_pos = 0
+  
+  // Home Z axis
+  while digitalRead(GPIO16) == LOW
+    moveStepper(z_stepper, 1, "BWD")
+  end
+  z_pos = 0
+  
+  print "Homing complete"
+end
+
+// Function to move to position
+function moveTo(x, y, z, feed):
+  // Calculate steps
+  let x_steps = (x - x_pos) * steps_per_mm
+  let y_steps = (y - y_pos) * steps_per_mm
+  let z_steps = (z - z_pos) * steps_per_mm
+  
+  // Move simultaneously
+  let max_steps = max(abs(x_steps), max(abs(y_steps), abs(z_steps)))
+  
+  for i in range(max_steps)
+    if i < abs(x_steps) then
+      if x_steps > 0 then
+        moveStepper(x_stepper, 1, "FWD")
+      else
+        moveStepper(x_stepper, 1, "BWD")
+      end
+    end
+    
+    if i < abs(y_steps) then
+      if y_steps > 0 then
+        moveStepper(y_stepper, 1, "FWD")
+      else
+        moveStepper(y_stepper, 1, "BWD")
+      end
+    end
+    
+    if i < abs(z_steps) then
+      if z_steps > 0 then
+        moveStepper(z_stepper, 1, "FWD")
+      else
+        moveStepper(z_stepper, 1, "BWD")
+      end
+    end
+    
+    delayMicroseconds(1000000 / feed / steps_per_mm)
+  end
+  
+  // Update position
+  x_pos = x
+  y_pos = y
+  z_pos = z
+end
+
+// Function to extrude
+function extrude(amount, feed):
+  let steps = amount * steps_per_mm
+  
+  if amount > 0 then
+    moveStepper(e_stepper, steps, "FWD")
+  else
+    moveStepper(e_stepper, steps, "BWD")
+  end
+  
+  e_pos = e_pos + amount
+end
+
+// Function to wait for temperature
+function waitForTemperature(target):
+  print "Waiting for temperature:", target
+  
+  while true
+    let temps = readTemperatures()
+    
+    if temps.hotend >= target - 2 then
+      print "Hotend temperature reached"
+      break
+    end
+    
+    // Display temperature
+    lcd.clear()
+    lcd.setCursor(0, 0)
+    lcd.print("Hotend: " + str(temps.hotend) + "C")
+    lcd.setCursor(0, 1)
+    lcd.print("Target: " + str(target) + "C")
+    
+    delay(1000)
+  end
+end
+
+// Function to print G-code line
+function executeGCode(line):
+  // Parse G-code
+  let command = line.substring(0, 3)
+  
+  if command == "G28" then
+    // Home all axes
+    homeAxes()
+    
+  else if command == "G1" then
+    // Linear move
+    let x = 0
+    let y = 0
+    let z = 0
+    let e = 0
+    let f = feed_rate
+    
+    // Parse parameters
+    let params = line.split(" ")
+    for param in params
+      if param.startsWith("X") then
+        x = param.substring(1).toFloat()
+      else if param.startsWith("Y") then
+        y = param.substring(1).toFloat()
+      else if param.startsWith("Z") then
+        z = param.substring(1).toFloat()
+      else if param.startsWith("E") then
+        e = param.substring(1).toFloat()
+      else if param.startsWith("F") then
+        f = param.substring(1).toFloat()
+      end
+    end
+    
+    // Move
+    moveTo(x, y, z, f)
+    
+    // Extrude if needed
+    if e > 0 then
+      extrude(e - e_pos, f)
+    end
+    
+  else if command == "M104" then
+    // Set hotend temperature
+    let temp = line.substring(4).toFloat()
+    hotend_target = temp
+    
+  else if command == "M140" then
+    // Set bed temperature
+    let temp = line.substring(4).toFloat()
+    bed_target = temp
+    
+  else if command == "M106" then
+    // Fan on
+    digitalWrite(GPIO13, HIGH)
+    
+  else if command == "M107" then
+    // Fan off
+    digitalWrite(GPIO13, LOW)
+    
+  else if command == "M84" then
+    // Disable steppers
+    // (implementation depends on stepper driver)
+  end
+end
+
+// Main program
+print "=== 3D Printer Controller ==="
+print "Initializing..."
+
+// Main loop
+while true
+  // Read temperatures
+  let temps = readTemperatures()
+  
+  // Control temperatures
+  controlHotend(hotend_target, temps.hotend)
+  controlBed(bed_target, temps.bed)
+  
+  // Display status
+  lcd.clear()
+  lcd.setCursor(0, 0)
+  lcd.print("H:" + str(temps.hotend) + "/" + str(hotend_target))
+  lcd.setCursor(0, 1)
+  lcd.print("B:" + str(temps.bed) + "/" + str(bed_target))
+  
+  // Check buttons
+  if digitalRead(GPIO24) == LOW then
+    homeAxes()
+  end
+  
+  if digitalRead(GPIO25) == LOW then
+    // Start printing from SD card
+    printer_state = "PRINTING"
+  end
+  
+  // Small delay
+  delay(100)
+end
