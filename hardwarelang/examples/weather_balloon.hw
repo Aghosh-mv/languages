@@ -1,0 +1,234 @@
+// HardwareLang - Weather Balloon Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program collects atmospheric data during balloon flight
+
+// Initialize the board
+board arduino = Arduino
+
+// Define sensors
+sensor temperature = Sensor(pin: A0, type: TEMP)
+sensor humidity = Sensor(pin: A1, type: HUMIDITY)
+sensor pressure = Sensor(pin: A2, type: PRESSURE)
+sensor gps = Sensor(pin: GPIO0, type: GPS)
+sensor accelerometer = Sensor(pin: GPIO1, type: ACCEL)
+
+// Define communication
+sensor radio = Sensor(pin: GPIO2, type: RADIO)
+
+// Define LED indicators
+led status = LED(pin: GPIO13)
+led error = LED(pin: GPIO12)
+
+// Define buzzer
+buzzer beep = Buzzer(pin: GPIO11)
+
+// Initialize serial communication
+uart.begin(9600)
+
+// Initialize radio
+radio.begin(9600)
+
+// Flight state
+let flight_state = "IDLE"  // IDLE, ASCENDING, DESCENDING, LANDED
+let start_time = 0
+let max_altitude = 0
+let current_altitude = 0
+
+// Data storage
+let readings = []
+const MAX_READINGS = 1000
+const TRANSMIT_INTERVAL = 10000  // 10 seconds
+
+// Function to read all sensors
+function readAllSensors():
+  let data = {}
+  data.timestamp = millis() - start_time
+  data.temperature = readTemperature()
+  data.humidity = readHumidity()
+  data.pressure = readPressure()
+  data.altitude = calculateAltitude(data.pressure)
+  data.gps = readGPS()
+  data.accelerometer = readAccelerometer()
+  data.flight_state = flight_state
+  
+  return data
+end
+
+// Function to read temperature
+function readTemperature():
+  let raw = readADC(A0)
+  let voltage = raw * (5.0 / 1023.0)
+  let tempC = (voltage - 0.5) * 100.0
+  return tempC
+end
+
+// Function to read humidity
+function readHumidity():
+  let raw = readADC(A1)
+  let humidity = raw * (100.0 / 1023.0)
+  return humidity
+end
+
+// Function to read pressure
+function readPressure():
+  let raw = readADC(A2)
+  let pressure = raw * (1000.0 / 1023.0)
+  return pressure
+end
+
+// Function to calculate altitude from pressure
+function calculateAltitude(pressure):
+  // Barometric formula
+  let altitude = 44330 * (1 - pow(pressure / 1013.25, 0.1903))
+  return altitude
+end
+
+// Function to read GPS
+function readGPS():
+  // Simulated GPS data
+  return {
+    latitude: 37.7749 + random(-0.001, 0.001),
+    longitude: -122.4194 + random(-0.001, 0.001),
+    altitude: current_altitude,
+    speed: random(0, 50),
+    heading: random(0, 360)
+  }
+end
+
+// Function to read accelerometer
+function readAccelerometer():
+  // Simulated accelerometer data
+  return {
+    x: random(-1, 1),
+    y: random(-1, 1),
+    z: random(9.5, 10.5)  // Gravity
+  }
+end
+
+// Function to transmit data
+function transmitData(data):
+  let payload = JSON.stringify(data)
+  
+  // Transmit via radio
+  radio.println(payload)
+  
+  // Also print to serial
+  uart.println(payload)
+  
+  // Blink LED
+  digitalWrite(GPIO13, HIGH)
+  delay(100)
+  digitalWrite(GPIO13, LOW)
+end
+
+// Function to determine flight state
+function determineFlightState(altitude, altitude_history):
+  if len(altitude_history) < 10 then
+    return "IDLE"
+  end
+  
+  let recent_altitudes = altitude_history.slice(-10)
+  let avg_change = 0
+  for i in range(1, len(recent_altitudes))
+    avg_change = avg_change + (recent_altitudes[i] - recent_altitudes[i-1])
+  end
+  avg_change = avg_change / (len(recent_altitudes) - 1)
+  
+  if avg_change > 1 then
+    return "ASCENDING"
+  else if avg_change < -1 then
+    return "DESCENDING"
+  else if altitude < 100 then
+    return "LANDED"
+  else
+    return flight_state
+  end
+end
+
+// Function to handle landing
+function handleLanding():
+  print "BALLOON LANDED!"
+  
+  // Sound buzzer
+  for i in range(5)
+    digitalWrite(GPIO11, HIGH)
+    delay(500)
+    digitalWrite(GPIO11, LOW)
+    delay(500)
+  end
+  
+  // Transmit final data
+  let final_data = {
+    event: "LANDED",
+    final_altitude: current_altitude,
+    flight_duration: millis() - start_time,
+    max_altitude: max_altitude
+  }
+  transmitData(final_data)
+end
+
+// Function to display data
+function displayData(data):
+  uart.print("T:")
+  uart.print(data.temperature)
+  uart.print(" H:")
+  uart.print(data.humidity)
+  uart.print(" P:")
+  uart.print(data.pressure)
+  uart.print(" A:")
+  uart.print(data.altitude)
+  uart.print(" S:")
+  uart.println(data.flight_state)
+end
+
+// Main program
+print "=== Weather Balloon ==="
+print "Initializing..."
+
+// Initialize
+start_time = millis()
+
+// Main loop
+while true
+  // Read sensors
+  let data = readAllSensors()
+  
+  // Store reading
+  readings.push(data)
+  if len(readings) > MAX_READINGS then
+    readings.shift()
+  end
+  
+  // Update altitude history
+  let altitude_history = readings.map((r) -> r.altitude)
+  
+  // Update flight state
+  flight_state = determineFlightState(data.altitude, altitude_history)
+  
+  // Update max altitude
+  if data.altitude > max_altitude then
+    max_altitude = data.altitude
+  end
+  
+  // Update current altitude
+  current_altitude = data.altitude
+  
+  // Display data
+  displayData(data)
+  
+  // Transmit data periodically
+  if millis() % TRANSMIT_INTERVAL == 0 then
+    transmitData(data)
+  end
+  
+  // Check for landing
+  if flight_state == "LANDED" then
+    handleLanding()
+    while true
+      delay(1000)
+    end
+  end
+  
+  // Delay before next reading
+  delay(1000)
+end
