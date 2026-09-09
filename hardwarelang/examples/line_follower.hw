@@ -1,0 +1,247 @@
+// HardwareLang - Line Following Robot Example
+// Difficulty: ⭐⭐⭐ (3/10)
+// This program controls a robot that follows a black line
+
+// Initialize the board
+board arduino = Arduino
+
+// Define motors
+motor left = Motor(pin_fwd: GPIO5, pin_bwd: GPIO6)
+motor right = Motor(pin_fwd: GPIO9, pin_bwd: GPIO10)
+
+// Define IR sensors
+sensor ir_left = Sensor(pin: GPIO13, type: IR)
+sensor ir_center = Sensor(pin: GPIO12, type: IR)
+sensor ir_right = Sensor(pin: GPIO11, type: IR)
+
+// Define potentiometer for speed control
+sensor speed_pot = Sensor(pin: A0, type: POTENTIOMETER)
+
+// Define buttons
+button btn_start = Button(pin: GPIO2)
+button btn_calibration = Button(pin: GPIO3)
+
+// Define LED for status
+led status = LED(pin: GPIO4)
+
+// PID Constants
+const KP = 2.0
+const KI = 0.1
+const KD = 0.5
+
+// Robot state
+let running = false
+let speed = 150
+let last_error = 0
+let integral = 0
+
+// Sensor thresholds
+const BLACK_THRESHOLD = 500
+
+// Function to read sensors
+function readSensors():
+  let left = readADC(GPIO13)
+  let center = readADC(GPIO12)
+  let right = readADC(GPIO11)
+  
+  return {
+    left: left,
+    center: center,
+    right: right
+  }
+end
+
+// Function to calculate error
+function calculateError(sensors):
+  // Black line = low value, white surface = high value
+  let left_black = sensors.left < BLACK_THRESHOLD
+  let center_black = sensors.center < BLACK_THRESHOLD
+  let right_black = sensors.right < BLACK_THRESHOLD
+  
+  // Calculate error based on sensor readings
+  // Negative error = line is to the left
+  // Positive error = line is to the right
+  // Zero error = line is centered
+  
+  if left_black and not center_black and not right_black then
+    return -2  // Line is far left
+  else if left_black and center_black and not right_black then
+    return -1  // Line is slightly left
+  else if not left_black and center_black and not right_black then
+    return 0   // Line is centered
+  else if not left_black and center_black and right_black then
+    return 1   // Line is slightly right
+  else if not left_black and not center_black and right_black then
+    return 2   // Line is far right
+  else if not left_black and not center_black and not center_black then
+    return last_error  // Line lost, continue in last direction
+  else
+    return 0   // Default
+  end
+end
+
+// Function to PID control
+function pidControl(error):
+  // Proportional term
+  let p = error * KP
+  
+  // Integral term
+  integral = integral + error
+  let i = integral * KI
+  
+  // Derivative term
+  let derivative = error - last_error
+  let d = derivative * KD
+  
+  // Calculate correction
+  let correction = p + i + d
+  
+  // Save for next iteration
+  last_error = error
+  
+  return correction
+end
+
+// Function to move motors
+function moveMotors(speed, correction):
+  let left_speed = speed + correction
+  let right_speed = speed - correction
+  
+  // Constrain speeds
+  if left_speed > 255 then left_speed = 255 end
+  if left_speed < -255 then left_speed = -255 end
+  if right_speed > 255 then right_speed = 255 end
+  if right_speed < -255 then right_speed = -255 end
+  
+  // Move left motor
+  if left_speed > 0 then
+    motorControl(left, FWD, left_speed)
+  else if left_speed < 0 then
+    motorControl(left, BWD, abs(left_speed))
+  else
+    motorControl(left, STOP, 0)
+  end
+  
+  // Move right motor
+  if right_speed > 0 then
+    motorControl(right, FWD, right_speed)
+  else if right_speed < 0 then
+    motorControl(right, BWD, abs(right_speed))
+  else
+    motorControl(right, STOP, 0)
+  end
+end
+
+// Function to stop robot
+function stopRobot():
+  motorControl(left, STOP, 0)
+  motorControl(right, STOP, 0)
+  running = false
+  digitalWrite(GPIO4, LOW)
+end
+
+// Function to start robot
+function startRobot():
+  running = true
+  digitalWrite(GPIO4, HIGH)
+end
+
+// Function to calibrate sensors
+function calibrateSensors():
+  print "Calibrating sensors..."
+  print "Move robot over line to calibrate"
+  
+  let min_left = 1023
+  let max_left = 0
+  let min_center = 1023
+  let max_center = 0
+  let min_right = 1023
+  let max_right = 0
+  
+  // Collect samples for 5 seconds
+  let start_time = millis()
+  while millis() - start_time < 5000
+    let sensors = readSensors()
+    
+    if sensors.left < min_left then min_left = sensors.left end
+    if sensors.left > max_left then max_left = sensors.left end
+    if sensors.center < min_center then min_center = sensors.center end
+    if sensors.center > max_center then max_center = sensors.center end
+    if sensors.right < min_right then min_right = sensors.right end
+    if sensors.right > max_right then max_right = sensors.right end
+    
+    // Blink LED during calibration
+    digitalWrite(GPIO4, HIGH)
+    delay(100)
+    digitalWrite(GPIO4, LOW)
+    delay(100)
+  end
+  
+  // Calculate thresholds
+  let threshold_left = (min_left + max_left) / 2
+  let threshold_center = (min_center + max_center) / 2
+  let threshold_right = (min_right + max_right) / 2
+  
+  print "Calibration complete"
+  print "Left threshold:", threshold_left
+  print "Center threshold:", threshold_center
+  print "Right threshold:", threshold_right
+  
+  // Update threshold (in real implementation, store in EEPROM)
+  BLACK_THRESHOLD = (threshold_left + threshold_center + threshold_right) / 3
+end
+
+// Main program
+print "=== Line Following Robot ==="
+print "Initializing..."
+
+// Main loop
+while true
+  // Check start button
+  if digitalRead(GPIO2) == LOW then
+    if running then
+      stopRobot()
+      print "Robot stopped"
+    else
+      startRobot()
+      print "Robot started"
+    end
+    while digitalRead(GPIO2) == LOW
+      delay(100)
+    end
+  end
+  
+  // Check calibration button
+  if digitalRead(GPIO3) == LOW then
+    stopRobot()
+    calibrateSensors()
+    while digitalRead(GPIO3) == LOW
+      delay(100)
+    end
+  end
+  
+  // Read speed potentiometer
+  speed = map(readADC(A0), 0, 1023, 100, 255)
+  
+  // If robot is running, follow line
+  if running then
+    // Read sensors
+    let sensors = readSensors()
+    
+    // Calculate error
+    let error = calculateError(sensors)
+    
+    // PID control
+    let correction = pidControl(error)
+    
+    // Move motors
+    moveMotors(speed, correction)
+    
+    // Debug output
+    if millis() % 1000 == 0 then
+      print "Error:", error, "Correction:", correction, "Speed:", speed
+    end
+  end
+  
+  delay(10)  // Small delay for stability
+end
